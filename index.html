@@ -18,7 +18,7 @@ function etiqueta(r) {
   if (r.estado === "pagado") return '<span class="pill ok">Pagado</span>';
   if (r.estado === "bad") return '<span class="pill bad">Vencido</span>';
   if (r.estado === "warn") return '<span class="pill warn">Vence pronto</span>';
-  return '<span class="pill ok">Al día</span>';
+  return r.proximo ? '<span class="pill ok">Al día</span>' : "";
 }
 
 function render(p) {
@@ -40,11 +40,11 @@ function render(p) {
     </div>
     ${r.proximo ? `<div class="stat" style="margin-top:10px"><span class="muted small">${r.vencido ? "Fecha de pago vencida" : "Próxima fecha de pago"}</span><b>${fecha(r.proximo)}</b></div>` : ""}
 
-    <h2>Lo que debes</h2>
+    <h2>Préstamos</h2>
     <div class="list">
       ${p.deudas.length ? p.deudas.map((d) => `
         <div class="item">
-          <div><div>${esc(d.concepto)}</div><div class="small muted">${fecha(d.fecha)}${d.vence ? " · vence " + fecha(d.vence) : ""}</div></div>
+          <div><div>${esc(concepto(d.concepto))}</div><div class="small muted">${fecha(d.fecha)}${d.vence ? " · vence " + fecha(d.vence) : ""}</div></div>
           <div class="amt">${money(d.monto)}</div>
         </div>`).join("") : '<div class="empty">Sin deudas registradas</div>'}
     </div>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>Mis cobros</title>
+<title>Enlaces de cobro</title>
 <link rel="stylesheet" href="styles.css">
 <style>
 details.list{margin-bottom:10px}
@@ -12,14 +12,11 @@ details>summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;ju
 details>summary::-webkit-details-marker{display:none}
 details[open]>summary{border-bottom:1px solid var(--line)}
 .body{padding:4px 16px 16px}
-.forms{display:grid;grid-template-columns:1fr;gap:10px;margin-top:14px}
-.forms form{border:1px solid var(--line);border-radius:12px;padding:12px}
-.forms h3{margin:0;font-size:14px}
-.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.sub{font-size:13px;color:var(--muted);margin:14px 0 6px;font-weight:600}
-.aviso{background:var(--accent-soft);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin:14px 0}
-.aviso a{display:inline-block;margin-top:10px;text-decoration:none}
-.mini{padding:8px 0;border-top:1px solid var(--line);display:flex;justify-content:space-between;font-size:14px}
+.two{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}
+.aviso{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 16px;border-top:1px solid var(--line)}
+.aviso:first-child{border-top:0}
+.tabs{display:flex;gap:8px;margin:18px 0 0}
+.tabs button{flex:1}
 </style>
 </head>
 <body>
@@ -27,14 +24,20 @@ details[open]>summary{border-bottom:1px solid var(--line)}
 <script src="api.js"></script>
 <script>
 const app = document.getElementById("app");
-let clave = null, personas = [], abierta = null, aviso = null;
+let clave = null, personas = [], abierta = null, filtro = "pend";
 try { clave = localStorage.getItem("cobros_clave"); } catch (e) {}
 
 const linkDe = (p) => `${location.origin}${location.pathname.replace(/admin(\.html)?$/, "")}?c=${p.token}`;
+const primerNombre = (p) => p.nombre.split(" ")[0];
+function waNumber(t) {
+  const d = String(t).replace(/\D/g, "");
+  return d.length === 9 ? "34" + d : d; // móviles de España sin prefijo
+}
+const waUrl = (p, msg) => `https://wa.me/${waNumber(p.telefono)}?text=${encodeURIComponent(msg)}`;
 
 function login(msg) {
   app.innerHTML = `
-    <h1>Mis cobros</h1>
+    <h1>Enlaces de cobro</h1>
     <p class="muted">Entra con tu clave de administrador.</p>
     <form id="f" class="card">
       <label for="k">Clave</label>
@@ -60,174 +63,108 @@ async function cargar() {
   }
 }
 
-function pill(r) {
-  if (r.estado === "pagado") return '<span class="pill ok">Pagado</span>';
-  if (r.estado === "bad") return '<span class="pill bad">Vencido</span>';
-  if (r.estado === "warn") return '<span class="pill warn">Vence pronto</span>';
-  return "";
+function msgAbono(p, a) {
+  const r = resumen(p);
+  return `Hola ${primerNombre(p)}, recibí tu abono de ${money(a.monto)} del ${fecha(a.fecha)}. ¡Gracias! ` +
+    (r.saldo > 0 ? `Te queda un saldo de ${money(r.saldo)}.` : "Con esto quedas al día.") +
+    ` Puedes ver tu estado de cuenta aquí: ${linkDe(p)}`;
 }
 
 function render() {
   const total = personas.reduce((s, p) => s + resumen(p).saldo, 0);
-  const cobrado = personas.reduce((s, p) => s + Number(p.total_abonado), 0);
+  const pendientes = personas.flatMap((p) => p.abonos.filter((a) => !a.avisado).map((a) => ({ p, a })));
+  const lista = personas.filter((p) => filtro === "all" || resumen(p).saldo > 0)
+    .sort((a, b) => resumen(b).saldo - resumen(a).saldo);
+
   app.innerHTML = `
-    <div class="row"><h1>Mis cobros</h1><button class="ghost" id="salir">Salir</button></div>
-    ${aviso ? `<div class="aviso"><b>Avisarle a ${esc(aviso.nombre)}</b><div class="small muted">${esc(aviso.texto)}</div>
-      <a href="${aviso.url}" target="_blank" rel="noopener"><button type="button">Enviar por WhatsApp</button></a>
-      <button type="button" class="ghost" id="cerrarAviso">Ahora no</button></div>` : ""}
+    <div class="row"><h1>Enlaces de cobro</h1><button class="ghost" id="salir">Salir</button></div>
+    <p class="muted small" style="margin:4px 0 0">Los préstamos y abonos vienen de tu app <b>Mi control de dinero</b>. Aquí solo mandas los enlaces y los avisos.</p>
     <div class="grid2">
-      <div class="stat"><span class="muted small">Por cobrar</span><b>${money(total)}</b></div>
-      <div class="stat"><span class="muted small">Ya cobrado</span><b>${money(cobrado)}</b></div>
+      <div class="stat"><span class="muted small">Te deben en total</span><b>${money(total)}</b></div>
+      <div class="stat"><span class="muted small">Abonos sin avisar</span><b>${pendientes.length}</b></div>
     </div>
 
+    ${pendientes.length ? `
+    <h2>Avisar abonos nuevos</h2>
+    <div class="list">${pendientes.map(({ p, a }) => `
+      <div class="aviso">
+        <div><b>${esc(p.nombre)}</b> te abonó <b>${money(a.monto)}</b><div class="small muted">${fecha(a.fecha)}${p.telefono ? "" : " · falta su WhatsApp"}</div></div>
+        <div class="actions" style="margin:0;flex-wrap:nowrap">
+          ${p.telefono ? `<a href="${waUrl(p, msgAbono(p, a))}" target="_blank" rel="noopener" data-avisar="${a.id}"><button type="button">Avisar</button></a>` : ""}
+          <button type="button" class="ghost" data-listo="${a.id}" title="Marcar como avisado">✓</button>
+        </div>
+      </div>`).join("")}
+    </div>` : ""}
+
+    <div class="tabs">
+      <button class="${filtro === "pend" ? "" : "ghost"}" data-filtro="pend">Con saldo pendiente</button>
+      <button class="${filtro === "all" ? "" : "ghost"}" data-filtro="all">Todas</button>
+    </div>
     <h2>Personas</h2>
-    ${personas.length ? "" : '<p class="muted">Aún no hay nadie. Agrega a la primera persona abajo.</p>'}
-    ${personas.map((p) => {
+    ${lista.map((p) => {
       const r = resumen(p);
       return `
       <details class="list" data-id="${p.id}" ${abierta === p.id ? "open" : ""}>
         <summary>
-          <div><b>${esc(p.nombre)}</b> ${pill(r)}<div class="small muted">Abonó ${money(p.total_abonado)} de ${money(p.total_deuda)}${r.proximo ? " · paga " + fecha(r.proximo) : ""}</div></div>
+          <div><b>${esc(p.nombre)}</b><div class="small muted">Abonó ${money(p.total_abonado)} de ${money(p.total_deuda)}</div></div>
           <div class="amt">${money(r.saldo)}</div>
         </summary>
         <div class="body">
+          <form data-form="tel" class="two">
+            <div><label>WhatsApp</label><input name="telefono" value="${esc(p.telefono)}" placeholder="612 345 678" inputmode="tel"></div>
+            <button class="ghost">Guardar</button>
+          </form>
           <div class="actions">
             <button data-act="copiar">Copiar enlace</button>
-            ${p.telefono ? `<button class="ghost" data-act="wa">Enviar por WhatsApp</button>` : ""}
+            ${p.telefono ? `<button class="ghost" data-act="wa">Enviar enlace</button>` : ""}
             ${p.telefono && r.saldo > 0 ? `<button class="ghost" data-act="recordar">Recordarle el pago</button>` : ""}
-            <button class="ghost" data-act="ver">Ver como ${esc(p.nombre.split(" ")[0])}</button>
+            <button class="ghost" data-act="ver">Ver su página</button>
+            <button class="danger" data-act="nuevo">Cambiar enlace</button>
           </div>
-
-          <div class="forms">
-            <form data-form="abono">
-              <h3>Registrar abono</h3>
-              <div class="two">
-                <div><label>Monto</label><input name="monto" type="number" step="0.01" min="0.01" inputmode="decimal" required></div>
-                <div><label>Fecha</label><input name="fecha" type="date" value="${hoyISO()}" required></div>
-              </div>
-              <label>Nota (opcional)</label><input name="nota" placeholder="Yappy, efectivo…">
-              <div class="actions"><button>Guardar abono</button></div>
-            </form>
-            <form data-form="deuda">
-              <h3>Agregar deuda</h3>
-              <label>Concepto</label><input name="concepto" placeholder="Préstamo, compra…" required>
-              <div class="two">
-                <div><label>Monto</label><input name="monto" type="number" step="0.01" min="0.01" inputmode="decimal" required></div>
-                <div><label>Fecha</label><input name="fecha" type="date" value="${hoyISO()}" required></div>
-              </div>
-              <label>Fecha límite de pago (opcional)</label><input name="vence" type="date">
-              <div class="actions"><button>Guardar deuda</button></div>
-            </form>
-          </div>
-
-          <div class="sub">Deudas</div>
-          ${p.deudas.map((d) => `<div class="mini"><span>${esc(d.concepto)} · ${fecha(d.fecha)}${d.vence ? " · vence " + fecha(d.vence) : ""}</span><b>${money(d.monto)}</b></div>`).join("") || '<div class="small muted">Ninguna</div>'}
-          <div class="sub">Abonos</div>
-          ${p.abonos.map((a) => `<div class="mini"><span>${fecha(a.fecha)}${a.nota ? " · " + esc(a.nota) : ""}</span><b>${money(a.monto)}</b></div>`).join("") || '<div class="small muted">Ninguno</div>'}
-
-          <form data-form="persona" style="margin-top:16px">
-            <div class="sub" style="margin-top:0">Datos de contacto</div>
-            <div class="two">
-              <div><label>Nombre</label><input name="nombre" value="${esc(p.nombre)}" required></div>
-              <div><label>WhatsApp</label><input name="telefono" value="${esc(p.telefono)}" placeholder="6123-4567" inputmode="tel"></div>
-            </div>
-            <div class="actions"><button class="ghost">Guardar datos</button><button type="button" class="danger" data-act="nuevo">Cambiar enlace</button></div>
-          </form>
         </div>
       </details>`;
-    }).join("")}
+    }).join("") || '<p class="muted">Nadie te debe nada ahora mismo.</p>'}
+    <footer>Cada persona solo ve su propia cuenta con su enlace.</footer>`;
 
-    <h2>Agregar persona</h2>
-    <form id="nueva" class="card">
-      <div class="two">
-        <div><label>Nombre</label><input name="nombre" required></div>
-        <div><label>WhatsApp (opcional)</label><input name="telefono" placeholder="6123-4567" inputmode="tel"></div>
-      </div>
-      <label>Deuda inicial: concepto</label><input name="concepto" placeholder="Préstamo">
-      <div class="two">
-        <div><label>Monto</label><input name="monto" type="number" step="0.01" min="0.01" inputmode="decimal"></div>
-        <div><label>Fecha límite (opcional)</label><input name="vence" type="date"></div>
-      </div>
-      <div class="actions"><button>Agregar</button></div>
-    </form>
-    <footer>Cada persona ve solo su propio enlace.</footer>`;
-
-  const ca = document.getElementById("cerrarAviso");
-  if (ca) ca.onclick = () => { aviso = null; render(); };
-  app.querySelectorAll(".aviso a").forEach((a) => a.addEventListener("click", () => setTimeout(() => { aviso = null; render(); }, 300)));
   document.getElementById("salir").onclick = () => { try { localStorage.removeItem("cobros_clave"); } catch (e) {} clave = null; login(); };
+  app.querySelectorAll("[data-filtro]").forEach((b) => (b.onclick = () => { filtro = b.dataset.filtro; render(); }));
+  app.querySelectorAll("[data-avisar]").forEach((a) => a.addEventListener("click", () => marcar([a.dataset.avisar])));
+  app.querySelectorAll("[data-listo]").forEach((b) => (b.onclick = () => marcar([b.dataset.listo])));
   app.querySelectorAll("details").forEach((d) => d.addEventListener("toggle", () => { if (d.open) abierta = d.dataset.id; }));
   app.querySelectorAll("details").forEach((el) => wire(el, personas.find((p) => p.id === el.dataset.id)));
-  document.getElementById("nueva").onsubmit = (e) => guardar(e, async (f) => {
-    const id = await rpc("cobros_admin_persona", { p_clave: clave, p_id: null, p_nombre: f.nombre.value.trim(), p_telefono: f.telefono.value.trim(), p_nota: null });
-    if (f.monto.value) await rpc("cobros_admin_deuda", { p_clave: clave, p_persona: id, p_concepto: f.concepto.value.trim() || "Préstamo", p_monto: Number(f.monto.value), p_fecha: hoyISO(), p_vence: f.vence.value || null });
-    abierta = id;
-  });
 }
 
-async function guardar(e, fn) {
-  e.preventDefault();
-  const f = e.target, btns = f.querySelectorAll("button");
-  btns.forEach((b) => (b.disabled = true));
-  aviso = null;
-  try { const despues = await fn(f); await cargar(); if (despues) { aviso = despues(); render(); window.scrollTo(0, 0); } }
-  catch (err) { btns.forEach((b) => (b.disabled = false)); alert("No se pudo guardar: " + err.message); }
-}
-
-const primerNombre = (p) => p.nombre.split(" ")[0];
-const waUrl = (p, msg) => `https://wa.me/${waNumber(p.telefono)}?text=${encodeURIComponent(msg)}`;
-
-// Aviso por WhatsApp con los datos ya actualizados (solo si la persona tiene número)
-function avisoPara(id, texto) {
-  const q = personas.find((x) => x.id === id);
-  if (!q || !q.telefono) return null;
-  const msg = texto(q, resumen(q));
-  return { nombre: q.nombre, texto: msg, url: waUrl(q, msg) };
-}
-
-function waNumber(t) {
-  const d = String(t).replace(/\D/g, "");
-  return d.length === 8 ? "507" + d : d; // números de Panamá sin código de país
+async function marcar(ids) {
+  try { await rpc("cobros_admin_avisado", { p_clave: clave, p_ids: ids }); } catch (e) { alert(e.message); }
+  setTimeout(cargar, 400);
 }
 
 function wire(el, p) {
   const link = linkDe(p);
-  el.querySelector('[data-act="copiar"]').onclick = async (e) => {
+  const on = (act, fn) => { const b = el.querySelector(`[data-act="${act}"]`); if (b) b.onclick = fn; };
+  on("copiar", async (e) => {
     try { await navigator.clipboard.writeText(link); e.target.textContent = "¡Copiado!"; }
     catch (_) { prompt("Copia este enlace:", link); }
-  };
-  const wa = el.querySelector('[data-act="wa"]');
-  if (wa) wa.onclick = () => {
-    const msg = `Hola ${p.nombre.split(" ")[0]}, aquí puedes ver tu estado de cuenta (cuánto has abonado y cuánto queda): ${link}`;
-    window.open(`https://wa.me/${waNumber(p.telefono)}?text=${encodeURIComponent(msg)}`, "_blank");
-  };
-  const rec = el.querySelector('[data-act="recordar"]');
-  if (rec) rec.onclick = () => {
+  });
+  on("wa", () => window.open(waUrl(p, `Hola ${primerNombre(p)}, aquí puedes ver tu estado de cuenta (lo que has abonado y lo que queda): ${link}`), "_blank"));
+  on("recordar", () => {
     const r = resumen(p);
-    const cuando = r.proximo ? (r.vencido ? ` La fecha de pago era el ${fecha(r.proximo)}.` : ` Tu próxima fecha de pago es el ${fecha(r.proximo)}.`) : "";
-    const msg = `Hola ${primerNombre(p)}, te recuerdo que tienes un saldo pendiente de ${money(r.saldo)}.${cuando} Aquí puedes ver tu cuenta: ${link}`;
-    window.open(waUrl(p, msg), "_blank");
-  };
-  el.querySelector('[data-act="ver"]').onclick = () => window.open(link, "_blank");
-  el.querySelector('[data-act="nuevo"]').onclick = async () => {
-    if (!confirm(`¿Crear un enlace nuevo para ${p.nombre}? El enlace anterior dejará de funcionar.`)) return;
+    window.open(waUrl(p, `Hola ${primerNombre(p)}, te recuerdo que tienes un saldo pendiente de ${money(r.saldo)}. Aquí puedes ver tu cuenta: ${link}`), "_blank");
+  });
+  on("ver", () => window.open(link, "_blank"));
+  on("nuevo", async () => {
+    if (!confirm(`¿Crear un enlace nuevo para ${p.nombre}? El anterior dejará de funcionar.`)) return;
     try { await rpc("cobros_admin_nuevo_enlace", { p_clave: clave, p_id: p.id }); await cargar(); }
     catch (err) { alert(err.message); }
+  });
+  el.querySelector('[data-form="tel"]').onsubmit = async (e) => {
+    e.preventDefault();
+    const b = e.target.querySelector("button"); b.disabled = true;
+    try {
+      await rpc("cobros_admin_persona", { p_clave: clave, p_id: p.id, p_nombre: p.nombre, p_telefono: e.target.telefono.value.trim(), p_nota: p.nota });
+      await cargar();
+    } catch (err) { b.disabled = false; alert(err.message); }
   };
-  el.querySelector('[data-form="abono"]').onsubmit = (e) => guardar(e, async (f) => {
-    const monto = Number(f.monto.value), dia = f.fecha.value;
-    await rpc("cobros_admin_abono", { p_clave: clave, p_persona: p.id, p_monto: monto, p_fecha: dia, p_nota: f.nota.value.trim() });
-    return () => avisoPara(p.id, (q, r) => `Hola ${primerNombre(q)}, recibí tu abono de ${money(monto)} del ${fecha(dia)}. ¡Gracias! ` +
-      (r.saldo > 0 ? `Te queda un saldo de ${money(r.saldo)}.` : "Con esto quedas al día, ya no debes nada.") + ` Puedes ver tu cuenta aquí: ${linkDe(q)}`);
-  });
-  el.querySelector('[data-form="deuda"]').onsubmit = (e) => guardar(e, async (f) => {
-    const monto = Number(f.monto.value), concepto = f.concepto.value.trim(), vence = f.vence.value || null;
-    await rpc("cobros_admin_deuda", { p_clave: clave, p_persona: p.id, p_concepto: concepto, p_monto: monto, p_fecha: f.fecha.value, p_vence: vence });
-    return () => avisoPara(p.id, (q, r) => `Hola ${primerNombre(q)}, anoté ${concepto} por ${money(monto)}` + (vence ? `, a pagar a más tardar el ${fecha(vence)}` : "") +
-      `. Tu saldo total ahora es ${money(r.saldo)}. Puedes ver tu cuenta aquí: ${linkDe(q)}`);
-  });
-  el.querySelector('[data-form="persona"]').onsubmit = (e) => guardar(e, (f) =>
-    rpc("cobros_admin_persona", { p_clave: clave, p_id: p.id, p_nombre: f.nombre.value.trim(), p_telefono: f.telefono.value.trim(), p_nota: p.nota }));
 }
 
 clave ? cargar() : login();

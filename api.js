@@ -14,12 +14,19 @@ async function rpc(fn, args) {
 }
 
 const money = (n) =>
-  "$" + Number(n || 0).toLocaleString("es-PA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  Number(n || 0).toLocaleString("es-ES", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Los conceptos importados del Excel se muestran más limpios
+const concepto = (c) => {
+  c = String(c || "Préstamo");
+  if (/^ajuste para cuadrar/i.test(c)) return "Ajuste";
+  return c.replace(/\s*\(del excel\)\s*/i, "");
+};
 
 const fecha = (d) => {
   if (!d) return "";
   const [y, m, day] = d.split("-").map(Number);
-  return new Date(y, m - 1, day).toLocaleDateString("es-PA", { day: "numeric", month: "short", year: "numeric" });
+  return new Date(y, m - 1, day).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
 };
 
 const hoyISO = () => {
